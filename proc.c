@@ -14,7 +14,6 @@ struct {
 } ptable;
 
 struct proc2 procs[NPROC];
-
 static struct proc *initproc;
 
 int nextpid = 1;
@@ -60,6 +59,9 @@ found:
   }
   i = p - ptable.proc; // Chin
   p->pp = &procs[i]; // Chin
+  initlock(&p->pp->mlock, "mtable");
+  initlock(&p->pp->cvlock, "cvtable");
+
   sp = p->kstack + KSTACKSIZE;
   
   // Leave room for trap frame.
@@ -149,6 +151,7 @@ fork(void)
     return -1;
   }
   np->pp->sz = proc->pp->sz; // Chin
+
   np->parent = proc;
   *np->tf = *proc->tf;
 
@@ -198,7 +201,8 @@ thread_exit(void *val)
   panic("zombie exit");
 }
 
-void append(struct proc *p, struct thread_q *q) {
+void
+append(struct proc *p, struct thread_q *q) {
   if (q->head) {
     (q->tail)->next = p;
   } else {
@@ -207,7 +211,8 @@ void append(struct proc *p, struct thread_q *q) {
   q->tail = p;
 }
 
-struct proc* pop(struct thread_q *q) {
+struct proc*
+pop(struct thread_q *q) {
   struct proc *top = q->head;
   if (q->tail != q->head) {
     q->head = q->head->next;
@@ -218,12 +223,65 @@ struct proc* pop(struct thread_q *q) {
   return top;
 }
 
+int
+allocm() {
+  int i;
+  acquire(&proc->pp->mlock);
+  for (i = 0; i < NOFILE; i++) {
+    if (proc->pp->m[i].used == 0) {
+      proc->pp->m[i].locked = 0;
+      proc->pp->m[i].waiting.head = 0;
+      proc->pp->m[i].waiting.tail = 0;
+      proc->pp->m[i].used = 1;
+      release(&proc->pp->mlock);
+      return i;
+    }
+  }
+  release(&proc->pp->mlock);
+  return -1;
+}
+
+int freem(int mutex) {
+  acquire(&proc->pp->mlock);
+  proc->pp->m[mutex].locked = 0;
+  proc->pp->m[mutex].waiting.head = 0;
+  proc->pp->m[mutex].waiting.tail = 0;
+  proc->pp->m[mutex].used = 1;
+  release(&proc->pp->mlock);
+  return 0;
+}
+
+int
+alloccv() {
+  int i;
+  acquire(&proc->pp->cvlock);
+  for (i = 0; i < NOFILE; i++) {
+    if (proc->pp->cv[i].used == 0) {
+      proc->pp->cv[i].waiting.head = 0;
+      proc->pp->cv[i].waiting.tail = 0;
+      proc->pp->cv[i].used = 1;
+      release(&proc->pp->cvlock);
+      return i;
+    }
+  }
+  release(&proc->pp->cvlock);
+  return -1;
+}
+
+int freecv(int condvar) {
+  acquire(&proc->pp->cvlock);
+  proc->pp->cv[condvar].waiting.head = 0;
+  proc->pp->cv[condvar].waiting.tail = 0;
+  proc->pp->cv[condvar].used = 0;
+  release(&proc->pp->cvlock);
+  return 0;
+}
+
+
 static void
 mutex_lock1(struct mutex *m) {
   if (m->locked) {
     append(proc, &m->waiting);
-    //proc->m_next = m->waiting;
-    //m->waiting = proc;
     proc->state = SLEEPING;
     sched();
   } else {
@@ -232,12 +290,11 @@ mutex_lock1(struct mutex *m) {
 }
 
 void
-mutex_lock(struct mutex *m) {
+mutex_lock(int mutex) {
   if (proc == 0)
     panic("sleep");
-
   acquire(&ptable.lock);
-  mutex_lock1(m);
+  mutex_lock1(&proc->pp->m[mutex]);
   release(&ptable.lock);
 }
 
@@ -245,72 +302,55 @@ static void
 mutex_unlock1(struct mutex *m) {
   struct proc *p = pop(&m->waiting);
   if (p) {
-    //struct proc *next = m->waiting;
-    //m->waiting = p->m_next;
-    //p->m_next = 0;
     p->state = RUNNABLE;
-    //p = next;
   } else {
     xchg(&m->locked, 0);
   }
 }
 
 void
-mutex_unlock(struct mutex *m) {
+mutex_unlock(int m) {
   acquire(&ptable.lock);
-  mutex_unlock1(m);
+  mutex_unlock1(&proc->pp->m[m]);
   release(&ptable.lock);
 }
 
 void
-cv_wait(struct condvar *cv, struct mutex *m) {
+cv_wait(int cv, int m) {
   if (proc == 0)
     panic("sleep");
-  //if (lk == 0)
-  if (m == 0)
-    panic("sleep without mutex");
 
   acquire(&ptable.lock);
-  mutex_unlock1(m);
+  mutex_unlock1(&proc->pp->m[m]);
 
-  append(proc, &cv->waiting);
-  //proc->cv_next = cv->waiting;
-  //cv->waiting = proc;
+  append(proc, &proc->pp->cv[cv].waiting);
   proc->state = SLEEPING;
   sched();
   
-  mutex_lock1(m);
+  mutex_lock1(&proc->pp->m[m]);
   release(&ptable.lock);
 }
 
 void
-cv_signal(struct condvar *cv) {
-  //struct condvar cv = proc->pp->cv[cvid];
-
-  acquire(&ptable.lock);
-  struct proc *p = pop(&cv->waiting);
-  if (p) {
-    //struct proc *next = p->cv_next;
-    //p->cv_next = 0;
-    p->state = RUNNABLE;
-    //p = next;
-  }
-  //cv->waiting = 0;
-  release(&ptable.lock);
-}
-
-void
-cv_broadcast(struct condvar *cv) {
+cv_signal(int cv) {
   struct proc *p;
 
   acquire(&ptable.lock);
-  while ((p = pop(&cv->waiting))) {
-    //struct proc *next = p->cv_next;
-    //p->cv_next = 0;
+  p = pop(&proc->pp->cv[cv].waiting);
+  if (p) {
     p->state = RUNNABLE;
-    //p = next;
   }
-  //cv->waiting = 0;
+  release(&ptable.lock);
+}
+
+void
+cv_broadcast(int cv) {
+  struct proc *p;
+
+  acquire(&ptable.lock);
+  while ((p = pop(&proc->pp->cv[cv].waiting))) {
+    p->state = RUNNABLE;
+  }
   release(&ptable.lock);
 }
 
@@ -357,7 +397,7 @@ thread_join(int pid, void **ret)
 }
 
 int
-thread_create(void *func, void *arg, uint *stack)
+thread_create(void *func, void *arg1, void *arg2, uint *stack)
 {
   struct proc *p;
   uint old_bp;
@@ -369,7 +409,8 @@ thread_create(void *func, void *arg, uint *stack)
   p->parent = proc;
   p->pp = proc->pp;
   *p->tf = *proc->tf;
-  *(--stack) = (int)arg;
+  *(--stack) = (int)arg2;
+  *(--stack) = (int)arg1;
   *(--stack) = 0;
 
   p->tf->eax = 0;

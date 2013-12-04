@@ -17,10 +17,10 @@ int
 sys_threadop(void)
 {
   uint op;
-  void *func, *arg, *val;
-  void *m, *cv;
+  void *func, *arg1, *arg2, *val;
   void **ret;
   uint *stack;
+  int *m, *cv;
   int pid;
 
   if (argint(0, (void*)&op) < 0)
@@ -29,13 +29,15 @@ sys_threadop(void)
     case 0: // thread_create
       if (argptr(1, (void*)&func, sizeof(*func)) < 0)
         return -1;
-      if (argptr(2, (void*)&arg, sizeof(*arg)) < 0)
+      if (argptr(2, (void*)&arg1, sizeof(*arg1)) < 0)
         return -1;
-      if (argint(3, (void*)&stack) < 0)
+      if (argptr(3, (void*)&arg2, sizeof(*arg2)) < 0)
+        return -1;
+      if (argint(4, (void*)&stack) < 0)
         return -1;
       //if (argint(4, &size) < 0)
       //  return -1;
-      return thread_create(func, arg, stack);
+      return thread_create(func, arg1, arg2, stack);
       break;
     case 1: // thread_exit
       if (argptr(1, (void*)&val, sizeof(*val)) < 0)
@@ -54,7 +56,7 @@ sys_threadop(void)
     case 3: // mutex_lock
       if (argptr(1, (void*)&m, sizeof(*m)) < 0)
         return -1;
-      mutex_lock(m);
+      mutex_lock(*m);
       return 0; // not reached
       break;
 
@@ -62,16 +64,16 @@ sys_threadop(void)
       if (argptr(1, (void*)&m, sizeof(*m)) < 0)
         return -1;
 
-      mutex_unlock(m);
+      mutex_unlock(*m);
       return 0; // not reached
       break;
 
     case 5: // cv_wait
       if (argptr(1, (void*)&cv, sizeof(*cv)) < 0)
         return -1;
-      if (argptr(2, (void*)&m, sizeof(*m)) < 0)
+      if (argptr(1, (void*)&m, sizeof(*m)) < 0)
         return -1;
-      cv_wait(cv, m);
+      cv_wait(*cv, *m);
       return 0; // not reached
       break;
 
@@ -79,7 +81,7 @@ sys_threadop(void)
       if (argptr(1, (void*)&cv, sizeof(*cv)) < 0)
         return -1;
 
-      cv_signal(cv);
+      cv_signal(*cv);
       return 0; // not reached
       break;
 
@@ -87,36 +89,26 @@ sys_threadop(void)
       if (argptr(1, (void*)&cv, sizeof(*cv)) < 0)
         return -1;
 
-      cv_broadcast(cv);
+      cv_broadcast(*cv);
       return 0; // not reached
       break;
+    case 8: // allocm
+      return allocm();
+      break;
+    case 9: // alloccv
+      return alloccv();
+      break;
+    case 10: // freem
+      if (argptr(1, (void*)&m, sizeof(*m)) < 0)
+        return -1;
+      return freem(*m);
+    case 11: // freecv
+      if (argptr(1, (void*)&cv, sizeof(*cv)) < 0)
+        return -1;
+      return freem(*cv);
     default:
       return -1;
   }
-  return 0; // not reached
-}
-
-int
-sys_mutex_lock(void)
-{
-  void *m;
-
-  if (argptr(0, (void*)&m, sizeof(*m)) < 0)
-    return -1;
-
-  mutex_lock(m);
-  return 0; // not reached
-}
-
-int
-sys_mutex_unlock(void)
-{
-  void *m;
-
-  if (argptr(0, (void*)&m, sizeof(*m)) < 0)
-    return -1;
-
-  mutex_unlock(m);
   return 0; // not reached
 }
 

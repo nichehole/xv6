@@ -6,6 +6,7 @@
 
 #include "types.h"
 #include "user.h"
+#include "thread.h"
 
 int nforks;
 qthread_mutex_t m;
@@ -71,7 +72,7 @@ void get_forks(int i)
     printf(1,"DEBUG: %d philosopher %d tries for right fork\n", uptime(), i);
     if (fork_in_use[right])
         qthread_cond_wait(&C[right], &m);
-    printf(1,"DEBUG: %d philosopher %d gets left fork\n", uptime(), i);
+    printf(1,"DEBUG: %d philosopher %d gets right fork\n", uptime(), i);
     fork_in_use[right] = 1;
 
     qthread_mutex_unlock(&m);

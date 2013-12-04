@@ -118,16 +118,18 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
-int             thread_create(void*, void*, uint*);
+int             thread_create(void*, void*, void*, uint*);
 void            thread_exit(void*);
 int             thread_join(int, void**);
-void            mutex_lock(struct mutex*);
-void            mutex_unlock(struct mutex*);
-void            cv_wait(struct condvar*, struct mutex*);
-void            cv_signal(struct condvar*);
-void            cv_broadcast(struct condvar*);
-//void            cv_wait(struct condvar, struct spinlock);
-//void            cv_wake(struct condvar);
+void            mutex_lock(int);
+void            mutex_unlock(int);
+void            cv_wait(int, int);
+void            cv_signal(int);
+void            cv_broadcast(int);
+int             allocm(void);
+int             alloccv(void);
+int             freem(int);
+int             freecv(int);
 
 
 // swtch.S

@@ -1,4 +1,5 @@
-// Segments in proc->gdt.
+#include "spinlock.h"
+//   Segments in proc->gdt.
 #define NSEGS     7
 
 // Per-CPU state
@@ -49,6 +50,23 @@ struct context {
   uint eip;
 };
 
+struct thread_q {
+  struct proc *head;
+  struct proc *tail;
+};
+
+struct mutex {
+  int used;
+  uint locked;
+  struct thread_q waiting;
+};
+
+struct condvar {
+  int used;
+  struct thread_q waiting;
+};
+
+
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // Per-process state
@@ -69,15 +87,16 @@ struct proc {
 struct proc2 {
   uint sz;                     // Size of process memory (bytes)
   pde_t* pgdir;                // Page table
-  //struct condvar *cv[NOFILE];  // Conditional variables
-  //struct mutex *m[NOFILE];     // Mutex
+  struct spinlock mlock;
+  struct spinlock cvlock;
+  struct condvar cv[NOFILE];   // Conditional variables
+  struct mutex m[NOFILE];      // Mutex
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-};  
+};
 
 // Process memory is laid out contiguously, low addresses first:
 //   text
 //   original data and bss
 //   fixed-size stack
-//   expandable heap

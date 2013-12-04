@@ -14,8 +14,8 @@ void t1(int x) {
 }
 */
 
-struct mutex m;
-struct condvar cv;
+qthread_mutex_t m;
+qthread_cond_t cv;
 
 qthread_t pid[10];
 int count = 0;
@@ -28,7 +28,7 @@ void t2_1(int pid) {
   printf(1, "thread %d woke up\n", pid);
   qthread_mutex_unlock(&m);
   printf(1, "thread %d unlocked\n", pid);
-  qthread_exit(0);
+  //qthread_exit(0);
   //while (1) sleep(500);
 }
 
@@ -38,7 +38,7 @@ void t2_2()
   printf(1, "thread 2 locks\n");
   printf(1, "thread 2 unlocked\n");
   qthread_mutex_unlock(&m);
-  qthread_exit(0);
+  //qthread_exit(0);
   //while (1) sleep(500);
 }
 
@@ -55,7 +55,7 @@ void t3()
   printf(1, "%d\n", count);
   qthread_mutex_unlock(&m);
   printf(1, "Thread3 unlocked\n");
-  qthread_exit(0);
+  //qthread_exit(0);
 }
 
 int
@@ -65,6 +65,9 @@ main(int argc, char *argv[])
   printf(1, "BEGIN\n");
   //int pid3;
   //uint x = 37;
+  qthread_mutex_init(&m, 0);
+  qthread_cond_init(&cv, 0);
+  printf(1, "m: %d, cv: %d\n", m, cv);
   for (i = 0; i < N; ++i) {
     qthread_create(&pid[i], *t3, (void*)i);
     printf(1, "thread %d pid: %d\n", i, pid[i]);
